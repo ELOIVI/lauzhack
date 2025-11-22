@@ -13,3 +13,8 @@ ipykernel>=6.26.0
 
 # Utils
 numpy>=1.24.0
+
+# Integration / realtime API
+fastapi>=0.95.0
+uvicorn[standard]>=0.22.0
+requests>=2.31.0

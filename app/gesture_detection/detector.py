@@ -9,6 +9,9 @@ import pickle
 import os
 from collections import deque
 from . import config
+import threading
+import requests
+import time
 
 SEQUENCE_LENGTH = 15  # Debe coincidir con el entrenamiento
 
@@ -59,7 +62,12 @@ class GestureDetector:
         
         # Historial para suavizar
         self.gesture_history = deque(maxlen=3)
-        
+
+        # Network settings: endpoint to send gesture events
+        # Can be overridden with environment variable GESTURE_EVENT_SERVER
+        self.event_server_url = os.environ.get('GESTURE_EVENT_SERVER', 'http://localhost:8000/event')
+        self._last_sent_gesture = None
+
         # MediaPipe
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
@@ -158,12 +166,38 @@ class GestureDetector:
                             if self.gesture_history.count(most_common) >= 2:
                                 gesture = most_common
                                 confidence = pred_confidence
+                                # Enviar evento al servidor (no bloqueante)
+                                try:
+                                    if gesture != self._last_sent_gesture:
+                                        self._last_sent_gesture = gesture
+                                        threading.Thread(
+                                            target=self._send_event,
+                                            args=(gesture, confidence),
+                                            daemon=True,
+                                        ).start()
+                                except Exception:
+                                    # No queremos que fallos de red rompan el detector
+                                    pass
         else:
             # Sin mano, resetear buffer
             self.sequence_buffer.clear()
             self.gesture_history.clear()
         
         return gesture, confidence, hand_detected, results
+
+    def _send_event(self, gesture, confidence):
+        """Enviar evento POST al servidor de integración."""
+        payload = {
+            "gesture": gesture,
+            "confidence": float(confidence),
+            "timestamp": time.time()
+        }
+        try:
+            # Fire-and-forget but do a single attempt
+            requests.post(self.event_server_url, json=payload, timeout=1.0)
+        except Exception:
+            # Silenciar errores de envío
+            return
     
     def get_buffer_progress(self):
         """Retorna el progreso del buffer (para UI)"""

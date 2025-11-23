@@ -19,21 +19,21 @@ Keypad Interaction
 (Insert your three keypad captures)
 
 ![Keypad 1](Capturas/Keypad1.PNG)
-![Keypad 2](path/to/Keypad2.PNG)
-![Keypad 3](path/to/Keypad3.PNG)
+![Keypad 2](Capturas/Keypad2.PNG)
+![Keypad 3](Capturas/Keypad3.PNG)
 Gallery
-![Gallery 1](path/to/GALLERY1.PNG)
-![Gallery 2](path/to/GALLERY2.PNG)
-![Gallery 3](path/to/GALLERY3.PNG)
+![Gallery 1](Capturas/GALLERY1.PNG)
+![Gallery 2](Capturas/GALLERY2.PNG)
+![Gallery 3](Capturas/GALLERY3.PNG)
 Notes
-![Notes 1](path/to/NOTES1.PNG)
-![Notes 2](path/to/NOTES2.PNG)
+![Notes 1](Capturas/NOTES1.PNG)
+![Notes 2](Capturas/NOTES2.PNG)
 PDF Viewer
-![PDF 1](path/to/PDF1.PNG)
-![PDF 2](path/to/PDF2.PNG)
-![PDF 3](path/to/PDF3.PNG)
+![PDF 1](Capturas/PDF1.PNG)
+![PDF 2](Capturas/PDF2.PNG)
+![PDF 3](Capturas/PDF3.PNG)
 Calendar
-![Calendar](path/to/CALENDAR.PNG)
+![Calendar](Capturas/CALENDAR.PNG)
 Requirements
 Windows 10/11 (tested) and a UVC‑compatible webcam
 

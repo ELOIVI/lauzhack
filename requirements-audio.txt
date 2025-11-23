@@ -1,0 +1,13 @@
+# Dependencias mínimas para reconocimiento de audio
+# API Framework
+fastapi>=0.95.0
+uvicorn[standard]>=0.22.0
+requests>=2.31.0
+
+# Reconocimiento de voz
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.13
+
+# Opcional: para diferentes engines de reconocimiento
+# pocketsphinx  # Reconocimiento offline
+# google-cloud-speech  # Google Cloud Speech API

@@ -21,3 +21,6 @@ requests>=2.31.0
 
 # Para crear ejecutable
 pyinstaller>=6.0.0
+
+SpeechRecognition>=3.8.1
+PyAudio>=0.2.11

@@ -11,15 +11,23 @@ MIN_TRACKING_CONFIDENCE = 0.7
 SMOOTHING_FRAMES = 5
 MOVEMENT_THRESHOLD = 0.03
 
-# Gestos disponibles
 GESTURES = {
-    "LEFT": "Mano hacia la izquierda",
-    "RIGHT": "Mano hacia la derecha",
-    "UP": "Mano hacia arriba",
-    "DOWN": "Mano hacia abajo",
+    # Gestos dinámicos (ML)
+    "SWIPE_LEFT": "Mano hacia la izquierda",
+    "SWIPE_RIGHT": "Mano hacia la derecha",
+    "SWIPE_UP": "Mano hacia arriba",
+    "SWIPE_DOWN": "Mano hacia abajo",
+    
+    # Gestos estáticos (reglas)
     "OPEN": "Mano abierta (5 dedos)",
     "CLOSED": "Puño cerrado"
 }
+
+# Parámetros de detección
+SEQUENCE_LENGTH = 15
+CONFIDENCE_THRESHOLD = 0.75
+MIN_FINGERS_OPEN = 4.5
+MAX_FINGERS_CLOSED = 1.5
 
 # Cámara
 CAMERA_INDEX = 0

@@ -1,5 +1,5 @@
 """
-Detector de gestos v2 - Usando secuencias temporales
+Detector de gestos v3 - Ventana deslizante + cooldown
 """
 
 import cv2
@@ -8,104 +8,81 @@ import numpy as np
 import pickle
 import os
 from collections import deque
-from . import config
-import threading
-import requests
+import warnings
 import time
 
-SEQUENCE_LENGTH = 15  # Debe coincidir con el entrenamiento
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
+
+SEQUENCE_LENGTH = 15
 
 class GestureDetector:
-    """
-    Detector de gestos usando secuencias temporales
-    """
+    """Detector con ventana deslizante y cooldown"""
+    
     def __init__(self, model_path=None, scaler_path=None):
-        """
-        Inicializa el detector
-        
-        Args:
-            model_path: Ruta al modelo .pkl
-            scaler_path: Ruta al scaler .pkl
-        """
-        # Rutas por defecto
         base_path = os.path.join(os.path.dirname(__file__), '..', '..')
         
         if model_path is None:
-            model_path = os.path.join(base_path, 'gesture_model_v2.pkl')
+            model_path = os.path.join(base_path, 'models', 'gesture_model_v3.pkl')
         if scaler_path is None:
-            scaler_path = os.path.join(base_path, 'feature_scaler.pkl')
+            scaler_path = os.path.join(base_path, 'models', 'feature_scaler_v3.pkl')
         
-        # Cargar modelo
         if not os.path.exists(model_path):
-            raise FileNotFoundError(
-                f"Modelo no encontrado en {model_path}\n"
-                "Entrena el modelo con train_sequence_model.ipynb"
-            )
+            raise FileNotFoundError(f"Modelo no encontrado: {model_path}")
         
         with open(model_path, 'rb') as f:
             self.model = pickle.load(f)
         
-        # Cargar scaler
-        if not os.path.exists(scaler_path):
-            raise FileNotFoundError(f"Scaler no encontrado en {scaler_path}")
-        
         with open(scaler_path, 'rb') as f:
             self.scaler = pickle.load(f)
         
-        print(f"✅ Modelo cargado: {model_path}")
-        print(f"✅ Scaler cargado: {scaler_path}")
-        print(f"📋 Gestos: {list(self.model.classes_)}")
+        print(f"✅ Modelo: {os.path.basename(model_path)}")
+        print(f"✅ Gestos: {list(self.model.classes_)}")
         
-        # Buffer para secuencia en vivo
+        # Buffer deslizante
         self.sequence_buffer = deque(maxlen=SEQUENCE_LENGTH)
-        self.confidence_threshold = 0.75
         
-        # Historial para suavizar
-        self.gesture_history = deque(maxlen=3)
-
-        # Network settings: endpoint to send gesture events
-        # Can be overridden with environment variable GESTURE_EVENT_SERVER
-        self.event_server_url = os.environ.get('GESTURE_EVENT_SERVER', 'http://localhost:8000/event')
-        self._last_sent_gesture = None
-
-        # MediaPipe
+        # Cooldown
+        self.last_detection_time = 0
+        self.cooldown_duration = 1.5  # 1.5 segundos entre detecciones
+        
+        # Parámetros de detección
+        self.confidence_threshold = 0.55  # Bajado aún más para detectar mejor
+        self.min_predictions = 2  # Necesita menos predicciones seguidas
+        self.prediction_history = deque(maxlen=5)
+        
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6
         )
-        
+    
     def extract_motion_features(self, sequence):
-        """Extrae features de movimiento (misma lógica que en entrenamiento)"""
+        """Extraer features de movimiento"""
         if len(sequence) < 2:
             return None
         
         features = []
-        
-        # Normalizar por primera posición
         first_wrist = sequence[0][0]
         
         for frame_landmarks in sequence:
             normalized = frame_landmarks - first_wrist
             features.extend(normalized.flatten())
         
-        # Velocidades
         velocities = []
         for i in range(1, len(sequence)):
             velocity = sequence[i] - sequence[i-1]
             velocities.extend(velocity.flatten())
         features.extend(velocities)
         
-        # Aceleraciones
         accelerations = []
         for i in range(2, len(sequence)):
             accel = (sequence[i] - sequence[i-1]) - (sequence[i-1] - sequence[i-2])
             accelerations.extend(accel.flatten())
         features.extend(accelerations)
         
-        # Features globales
         wrist_trajectory = np.array([frame[0] for frame in sequence])
         total_displacement = wrist_trajectory[-1] - wrist_trajectory[0]
         features.extend(total_displacement.flatten())
@@ -120,13 +97,12 @@ class GestureDetector:
         
         return np.array(features)
     
+    def is_in_cooldown(self):
+        """Verificar si está en cooldown"""
+        return (time.time() - self.last_detection_time) < self.cooldown_duration
+    
     def process_frame(self, frame):
-        """
-        Procesa frame y actualiza buffer de secuencia
-        
-        Returns:
-            tuple: (gesture, confidence, hand_detected, results)
-        """
+        """Procesar frame con ventana deslizante"""
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.hands.process(rgb_frame)
         
@@ -134,80 +110,71 @@ class GestureDetector:
         confidence = 0.0
         hand_detected = False
         
+        # Si está en cooldown, no procesar
+        if self.is_in_cooldown():
+            return None, 0.0, results.multi_hand_landmarks is not None, results
+        
         if results.multi_hand_landmarks:
             hand_detected = True
             
-            # Añadir frame al buffer
             landmarks = results.multi_hand_landmarks[0].landmark
             landmark_array = np.array([[lm.x, lm.y, lm.z] for lm in landmarks])
             self.sequence_buffer.append(landmark_array)
             
-            # Si tenemos secuencia completa, predecir
+            # Predecir cuando el buffer está lleno (ventana deslizante)
             if len(self.sequence_buffer) == SEQUENCE_LENGTH:
                 features = self.extract_motion_features(list(self.sequence_buffer))
                 
                 if features is not None:
-                    # Normalizar
                     features_scaled = self.scaler.transform([features])
-                    
-                    # Predecir
                     prediction = self.model.predict(features_scaled)[0]
                     probabilities = self.model.predict_proba(features_scaled)[0]
                     pred_confidence = np.max(probabilities)
                     
-                    # Solo aceptar si confianza > umbral
+                    # Solo considerar predicciones con alta confianza
                     if pred_confidence >= self.confidence_threshold:
-                        # Suavizar con historial
-                        self.gesture_history.append(prediction)
+                        self.prediction_history.append(prediction)
+                    else:
+                        self.prediction_history.append(None)
+                    
+                    # Verificar consenso (filtrando None)
+                    valid_predictions = [p for p in self.prediction_history if p is not None]
+                    
+                    if len(valid_predictions) >= self.min_predictions:
+                        most_common = max(set(valid_predictions),
+                                        key=valid_predictions.count)
                         
-                        if len(self.gesture_history) >= 2:
-                            most_common = max(set(self.gesture_history),
-                                            key=self.gesture_history.count)
-                            if self.gesture_history.count(most_common) >= 2:
-                                gesture = most_common
-                                confidence = pred_confidence
-                                # Enviar evento al servidor (no bloqueante)
-                                try:
-                                    if gesture != self._last_sent_gesture:
-                                        self._last_sent_gesture = gesture
-                                        threading.Thread(
-                                            target=self._send_event,
-                                            args=(gesture, confidence),
-                                            daemon=True,
-                                        ).start()
-                                except Exception:
-                                    # No queremos que fallos de red rompan el detector
-                                    pass
+                        # Si hay consenso
+                        if valid_predictions.count(most_common) >= self.min_predictions:
+                            gesture = most_common
+                            confidence = pred_confidence
+                            
+                            # Activar cooldown
+                            self.last_detection_time = time.time()
+                            
+                            # Limpiar historia
+                            self.prediction_history.clear()
+                            self.sequence_buffer.clear()
         else:
-            # Sin mano, resetear buffer
+            # Sin mano: limpiar buffer
             self.sequence_buffer.clear()
-            self.gesture_history.clear()
+            self.prediction_history.clear()
         
         return gesture, confidence, hand_detected, results
-
-    def _send_event(self, gesture, confidence):
-        """Enviar evento POST al servidor de integración."""
-        payload = {
-            "gesture": gesture,
-            "confidence": float(confidence),
-            "timestamp": time.time()
-        }
-        try:
-            # Fire-and-forget but do a single attempt
-            requests.post(self.event_server_url, json=payload, timeout=1.0)
-        except Exception:
-            # Silenciar errores de envío
-            return
     
     def get_buffer_progress(self):
-        """Retorna el progreso del buffer (para UI)"""
         return len(self.sequence_buffer), SEQUENCE_LENGTH
     
+    def get_cooldown_remaining(self):
+        """Obtener tiempo restante de cooldown"""
+        if self.is_in_cooldown():
+            return self.cooldown_duration - (time.time() - self.last_detection_time)
+        return 0
+    
     def reset(self):
-        """Resetea buffers"""
         self.sequence_buffer.clear()
-        self.gesture_history.clear()
+        self.prediction_history.clear()
+        self.last_detection_time = 0
     
     def close(self):
-        """Cierra MediaPipe"""
         self.hands.close()

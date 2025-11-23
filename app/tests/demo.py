@@ -57,11 +57,8 @@ def main():
         frame = cv2.flip(frame, 1)
         gesture, confidence, hand_detected, results = detector.process_frame(frame)
         
-        # Contar gestos
-        if gesture:
-            gesture_count[gesture] = gesture_count.get(gesture, 0) + 1
-            print(f"✅ {gesture} ({confidence*100:.1f}%) - Total: {gesture_count[gesture]}")
-        
+   
+      
         # Dibujar landmarks
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:

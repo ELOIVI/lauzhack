@@ -1,4 +1,4 @@
-# Gesture Detection AI — Assistive Interaction System for Elderly Users
+# EasyDesk — Assistive Interaction System for Elderly Users
 
 An assistive interaction system designed to help elderly users and people with limited digital literacy interact more easily with digital devices. The application combines:
 

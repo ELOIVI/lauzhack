@@ -15,6 +15,10 @@ warnings.filterwarnings('ignore')
 os.environ['PYTHONWARNINGS'] = 'ignore'
 
 SEQUENCE_LENGTH = 15
+FINGER_TIPS = [4, 8, 12, 16, 20]
+FINGER_MCP = [2, 5, 9, 13, 17]
+PALM_LANDMARKS = [0, 1, 5, 9, 13, 17]
+EPSILON = 1e-6
 
 class GestureDetector:
     """Detector con ventana deslizante y cooldown"""
@@ -91,11 +95,48 @@ class GestureDetector:
         y_disp = total_displacement[1]
         features.extend([x_disp, y_disp, np.sqrt(x_disp**2 + y_disp**2)])
         
-        mean_velocity = np.mean([np.linalg.norm(wrist_trajectory[i] - wrist_trajectory[i-1]) 
-                                for i in range(1, len(wrist_trajectory))])
+        mean_velocity = np.mean([
+            np.linalg.norm(wrist_trajectory[i] - wrist_trajectory[i-1])
+            for i in range(1, len(wrist_trajectory))
+        ])
         features.append(mean_velocity)
-        
-        return np.array(features)
+
+        last_frame = sequence[-1] - first_wrist
+        wrist = last_frame[0]
+        palm_points = last_frame[PALM_LANDMARKS]
+        palm_center = np.mean(palm_points, axis=0)
+        palm_vec = palm_center - wrist
+        palm_norm = np.linalg.norm(palm_vec[:2]) + EPSILON
+
+        posture_features = []
+
+        for tip_idx, mcp_idx in zip(FINGER_TIPS, FINGER_MCP):
+            tip_vec = last_frame[tip_idx] - wrist
+            tip_dist = np.linalg.norm(tip_vec)
+            finger_length = np.linalg.norm(last_frame[tip_idx] - last_frame[mcp_idx])
+            extension_ratio = tip_dist / palm_norm
+            angle = np.arctan2(tip_vec[1], tip_vec[0])
+
+            posture_features.extend([
+                tip_dist,
+                finger_length,
+                extension_ratio,
+                np.sin(angle),
+                np.cos(angle)
+            ])
+
+        for first_idx, second_idx in zip(FINGER_TIPS[:-1], FINGER_TIPS[1:]):
+            spread = np.linalg.norm(last_frame[first_idx] - last_frame[second_idx])
+            posture_features.append(spread)
+
+        palm_spread = np.mean(np.linalg.norm(palm_points - palm_center, axis=1))
+        palm_depth = np.mean(np.abs(palm_points[:, 2]))
+
+        posture_features.extend([palm_norm, palm_spread, palm_depth])
+
+        features.extend(posture_features)
+
+        return np.array(features, dtype=np.float32)
     
     def is_in_cooldown(self):
         """Verificar si está en cooldown"""
